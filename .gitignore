@@ -1,0 +1,27 @@
+# Data (QUAN TRỌNG: Không push dữ liệu nguyên bản lên Github)
+data/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+.venv/
+.conda/
+.jupyter/
+
+# Environment Variables
+.env
+.env.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.core
