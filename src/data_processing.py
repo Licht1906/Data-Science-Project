@@ -33,6 +33,41 @@ def save_clean_data(df_clean, db_path="data/processed/fraud.db"):
     conn.close()
     print(f"Đã lưu {len(df_clean)} dòng vào transactions_clean")
 
+def run_sql_analysis(db_path="data/processed/fraud.db"):
+    """Chạy SQL queries phân tích gian lận"""
+    conn = sqlite3.connect(db_path)
+
+    print("\nTỷ lệ gian lận theo loại thẻ:")
+    q1 = pd.read_sql("""
+        SELECT card4,
+               COUNT(*) as total,
+               SUM(isFraud) as fraud_count,
+               ROUND(AVG(isFraud) * 100, 2) as fraud_rate_pct
+        FROM transactions
+        GROUP BY card4
+        ORDER BY fraud_rate_pct DESC
+    """, conn)
+    print(q1.to_string())
+
+    print("\nTỷ lệ gian lận theo giá trị giao dịch:")
+    q2 = pd.read_sql("""
+        SELECT
+            CASE
+                WHEN TransactionAmt < 50   THEN '< $50'
+                WHEN TransactionAmt < 200  THEN '$50-200'
+                WHEN TransactionAmt < 1000 THEN '$200-1000'
+                ELSE '> $1000'
+            END as amt_bucket,
+            COUNT(*) as total,
+            ROUND(AVG(isFraud) * 100, 2) as fraud_rate_pct
+        FROM transactions
+        GROUP BY amt_bucket
+        ORDER BY fraud_rate_pct DESC
+    """, conn)
+    print(q2.to_string())
+
+    conn.close()
+
 if __name__ == "__main__":
     t, i = load_data()
     df   = merge_data(t, i)
