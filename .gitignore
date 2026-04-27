@@ -30,3 +30,35 @@ Thumbs.db
 
 # Env file (chứa secrets)
 .env
+*.env
+!.env.example
+
+# Airflow
+logs/
+airflow-logs/
+airflow.db
+airflow.cfg
+webserver_config.py
+standalone_admin_password.txt
+
+# Docker volumes / PostgreSQL data
+postgres-data/
+pgdata/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Data thô
+data/raw/
+data/external/
+*.csv
+!*.example.csv
+
+# Reports / figures tạm
+reports/figures/*.png
+reports/figures/*.jpg
+reports/figures/*.svg
+!reports/figures/.gitkeep
+
+# mypy
+.mypy_cache/
