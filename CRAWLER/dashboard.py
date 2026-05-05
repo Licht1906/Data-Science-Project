@@ -22,60 +22,61 @@ def render_crawler_dashboard() -> None:
 
     engine = create_engine(os.getenv("TIKI_DATA_DB", "postgresql+psycopg2://airflow:airflow@localhost:5432/tiki_data"))
     try:
-        products = pd.read_sql(
-            """
-            SELECT product_id, name, category, price, brand, rating_avg, review_count, url, crawled_at
-            FROM raw_products
-            ORDER BY crawled_at DESC
-            """,
-            engine,
-        )
-        reviews = pd.read_sql(
-            """
-            SELECT review_id, product_id, user_id, rating, content, helpful_count, purchased, created_at, crawled_at
-            FROM raw_reviews
-            ORDER BY crawled_at DESC
-            """,
-            engine,
-        )
-        history = pd.read_sql(
-            """
-            SELECT keyword, product_id, status, selected_at, completed_at, review_count
-            FROM crawl_product_history
-            ORDER BY selected_at DESC
-            """,
-            engine,
-        )
-        processed = pd.read_sql(
-            """
-            SELECT
-                pr.review_id,
-                pr.product_id,
-                pr.user_id,
-                pr.rating,
-                pr.content_clean,
-                pr.is_fake,
-                pr.fake_probability,
-                pr.flag_count,
-                pr.flags,
-                pr.label_version,
-                pr.processed_at,
-                r.content AS raw_content,
-                r.helpful_count,
-                r.purchased,
-                r.created_at AS review_created_at,
-                p.category,
-                p.name AS product_name,
-                u.total_reviews,
-                u.avg_rating_given
-            FROM processed_reviews pr
-            LEFT JOIN raw_reviews r ON pr.review_id = r.review_id
-            LEFT JOIN raw_products p ON pr.product_id = p.product_id
-            LEFT JOIN raw_users u ON pr.user_id = u.user_id
-            ORDER BY pr.processed_at DESC
-            """,
-            engine,
-        )
+        with engine.connect() as conn:
+            products = pd.read_sql(
+                """
+                SELECT product_id, name, category, price, brand, rating_avg, review_count, url, crawled_at
+                FROM raw_products
+                ORDER BY crawled_at DESC
+                """,
+                conn,
+            )
+            reviews = pd.read_sql(
+                """
+                SELECT review_id, product_id, user_id, rating, content, helpful_count, purchased, created_at, crawled_at
+                FROM raw_reviews
+                ORDER BY crawled_at DESC
+                """,
+                conn,
+            )
+            history = pd.read_sql(
+                """
+                SELECT keyword, product_id, status, selected_at, completed_at, review_count
+                FROM crawl_product_history
+                ORDER BY selected_at DESC
+                """,
+                conn,
+            )
+            processed = pd.read_sql(
+                """
+                SELECT
+                    pr.review_id,
+                    pr.product_id,
+                    pr.user_id,
+                    pr.rating,
+                    pr.content_clean,
+                    pr.is_fake,
+                    pr.fake_probability,
+                    pr.flag_count,
+                    pr.flags,
+                    pr.label_version,
+                    pr.processed_at,
+                    r.content AS raw_content,
+                    r.helpful_count,
+                    r.purchased,
+                    r.created_at AS review_created_at,
+                    p.category,
+                    p.name AS product_name,
+                    u.total_reviews,
+                    u.avg_rating_given
+                FROM processed_reviews pr
+                LEFT JOIN raw_reviews r ON pr.review_id = r.review_id
+                LEFT JOIN raw_products p ON pr.product_id = p.product_id
+                LEFT JOIN raw_users u ON pr.user_id = u.user_id
+                ORDER BY pr.processed_at DESC
+                """,
+                conn,
+            )
         model_registry = read_model_registry(engine)
     except Exception as exc:
         st.error(f"Chưa kết nối được PostgreSQL hoặc schema crawl chưa sẵn sàng: {exc}")
