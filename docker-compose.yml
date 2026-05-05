@@ -1,0 +1,82 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.3-python3.11
+  env_file:
+    - .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    TIKI_DATA_DB: postgresql+psycopg2://airflow:airflow@postgres:5432/tiki_data
+    PYTHONPATH: /opt/airflow
+    _PIP_ADDITIONAL_REQUIREMENTS: >-
+      apache-airflow-providers-postgres
+      requests
+      pandas
+      numpy
+  volumes:
+    - ./CRAWLER/dags:/opt/airflow/dags/crawler
+    - ./PREPROCESSING/dags:/opt/airflow/dags/preprocessing
+    - ./CRAWLER:/opt/airflow/CRAWLER
+    - ./PREPROCESSING:/opt/airflow/PREPROCESSING
+    - ./logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+        airflow connections add tiki_data \
+          --conn-type postgres \
+          --conn-host postgres \
+          --conn-schema tiki_data \
+          --conn-login airflow \
+          --conn-password airflow \
+          --conn-port 5432 || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
