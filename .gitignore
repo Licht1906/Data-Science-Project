@@ -1,0 +1,46 @@
+### Python ###
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+### Environments ###
+.venv/
+venv/
+.env
+
+### Sensitive / local only ###
+# Chỉ commit .env.example, KHÔNG commit .env thật
+*.env
+
+### Logs & runtime ###
+logs/
+*.log
+
+### Model artifacts (lưu trên S3/Drive, không commit git) ###
+NEXT_STEP/models/*.pkl
+NEXT_STEP/models/*.joblib
+NEXT_STEP/models/*.json
+# Giữ .gitkeep để git track thư mục rỗng
+!NEXT_STEP/models/.gitkeep
+
+### Data (raw data không commit) ###
+data/
+*.sqlite
+*.db
+
+### Jupyter Notebooks ###
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+### Reports output ###
+NEXT_STEP/reports/figures/*.png
+NEXT_STEP/reports/figures/*.jpg
+NEXT_STEP/reports/figures/*.svg
+
+### OS ###
+.DS_Store
+Thumbs.db
+

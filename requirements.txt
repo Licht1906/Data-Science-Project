@@ -1,0 +1,11 @@
+apache-airflow
+apache-airflow-providers-postgres
+python-dotenv
+requests
+psycopg2-binary
+SQLAlchemy
+pandas
+numpy
+streamlit
+plotly
+pytest
