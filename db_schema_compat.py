@@ -35,7 +35,10 @@ def read_model_registry(engine: Engine) -> pd.DataFrame:
         return _empty_registry()
 
     quoted = ", ".join(cols)
-    df = pd.read_sql(f"SELECT {quoted} FROM model_registry ORDER BY trained_at DESC", engine)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, message=".*pandas only supports SQLAlchemy connectable.*")
+        df = pd.read_sql(f"SELECT {quoted} FROM model_registry ORDER BY trained_at DESC", engine)
     for name in MODEL_REGISTRY_COLUMNS_PREFERRED:
         if name not in df.columns:
             df[name] = pd.NA

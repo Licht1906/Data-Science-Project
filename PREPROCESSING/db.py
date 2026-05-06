@@ -9,6 +9,11 @@ from sqlalchemy.engine import Engine
 
 
 def get_database_url() -> str:
+    """URL dùng chung cho Streamlit, script và (ưu tiên) DAG preprocessing.
+
+    Airflow Connection `tiki_data` có thể lệch với `.env` nếu không chạy lại `airflow-init`
+    sau khi đổi Neon — DAG `dag_clean_label` nên dùng hàm này thay vì chỉ PostgresHook.
+    """
     return os.getenv("TIKI_DATA_DB", "postgresql+psycopg2://airflow:airflow@localhost:5432/tiki_data")
 
 

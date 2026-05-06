@@ -8,7 +8,6 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
-    TIKI_DATA_DB: postgresql+psycopg2://airflow:airflow@postgres:5432/tiki_data
     PYTHONPATH: /opt/airflow
     _PIP_ADDITIONAL_REQUIREMENTS: >-
       apache-airflow-providers-postgres
@@ -57,13 +56,8 @@ services:
           --lastname User \
           --role Admin \
           --email admin@example.com || true
-        airflow connections add tiki_data \
-          --conn-type postgres \
-          --conn-host postgres \
-          --conn-schema tiki_data \
-          --conn-login airflow \
-          --conn-password airflow \
-          --conn-port 5432 || true
+        airflow connections delete tiki_data || true
+        airflow connections add tiki_data --conn-uri "$$TIKI_DATA_DB"
     restart: "no"
 
   airflow-webserver:

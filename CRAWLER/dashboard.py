@@ -10,79 +10,102 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from CRAWLER.keywords_env import tiki_keywords_from_env
+from PREPROCESSING.ids import SQL_DS_REVIEW_KEY_P, SQL_DS_REVIEW_KEY_R
 from db_schema_compat import read_model_registry
+
+
+import warnings
+
+def clear_dashboard_cache() -> None:
+    _fetch_all_data.clear()
+
+
+@st.cache_data(ttl=300, show_spinner="Đang tải dữ liệu từ Neon Cloud...")
+def _fetch_all_data(db_uri: str):
+    engine = create_engine(db_uri)
+    
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=UserWarning, message=".*pandas only supports SQLAlchemy connectable.*")
+        products = pd.read_sql(
+            """
+            SELECT product_id, name, category, price, brand, rating_avg, review_count, url, crawled_at
+            FROM raw_products
+            ORDER BY crawled_at DESC
+            """,
+            engine,
+        )
+        reviews = pd.read_sql(
+            """
+            SELECT review_id, product_id, user_id, rating, content, helpful_count, purchased, created_at, crawled_at
+            FROM raw_reviews
+            ORDER BY crawled_at DESC
+            """,
+            engine,
+        )
+        history = pd.read_sql(
+            """
+            SELECT keyword, product_id, status, selected_at, completed_at, review_count
+            FROM crawl_product_history
+            ORDER BY selected_at DESC
+            """,
+            engine,
+        )
+        processed = pd.read_sql(
+            """
+            SELECT
+                pr.review_id,
+                pr.product_id,
+                pr.user_id,
+                pr.rating,
+                pr.content_clean,
+                pr.is_fake,
+                pr.fake_probability,
+                pr.flag_count,
+                pr.flags,
+                pr.label_version,
+                pr.processed_at,
+                r.content AS raw_content,
+                r.helpful_count,
+                r.purchased,
+                r.created_at AS review_created_at,
+                p.category,
+                p.name AS product_name,
+                u.total_reviews,
+                u.avg_rating_given
+            FROM processed_reviews pr
+            LEFT JOIN raw_reviews r ON pr.review_id = r.review_id
+            LEFT JOIN raw_products p ON pr.product_id = p.product_id
+            LEFT JOIN raw_users u ON pr.user_id = u.user_id
+            ORDER BY pr.processed_at DESC
+            """,
+            engine,
+        )
+        model_registry = read_model_registry(engine)
+    return products, reviews, history, processed, model_registry
 
 
 def render_crawler_dashboard() -> None:
     st.header("Tiki Auto Crawler")
     st.caption("Theo dõi keyword discovery, sản phẩm đã crawl, comment thật và dữ liệu sau preprocessing.")
 
-    engine = create_engine(os.getenv("TIKI_DATA_DB", "postgresql+psycopg2://airflow:airflow@localhost:5432/tiki_data"))
+    db_uri = os.getenv("TIKI_DATA_DB", "postgresql+psycopg2://airflow:airflow@localhost:5432/tiki_data")
     try:
-        with engine.connect() as conn:
-            products = pd.read_sql(
-                """
-                SELECT product_id, name, category, price, brand, rating_avg, review_count, url, crawled_at
-                FROM raw_products
-                ORDER BY crawled_at DESC
-                """,
-                conn,
-            )
-            reviews = pd.read_sql(
-                """
-                SELECT review_id, product_id, user_id, rating, content, helpful_count, purchased, created_at, crawled_at
-                FROM raw_reviews
-                ORDER BY crawled_at DESC
-                """,
-                conn,
-            )
-            history = pd.read_sql(
-                """
-                SELECT keyword, product_id, status, selected_at, completed_at, review_count
-                FROM crawl_product_history
-                ORDER BY selected_at DESC
-                """,
-                conn,
-            )
-            processed = pd.read_sql(
-                """
-                SELECT
-                    pr.review_id,
-                    pr.product_id,
-                    pr.user_id,
-                    pr.rating,
-                    pr.content_clean,
-                    pr.is_fake,
-                    pr.fake_probability,
-                    pr.flag_count,
-                    pr.flags,
-                    pr.label_version,
-                    pr.processed_at,
-                    r.content AS raw_content,
-                    r.helpful_count,
-                    r.purchased,
-                    r.created_at AS review_created_at,
-                    p.category,
-                    p.name AS product_name,
-                    u.total_reviews,
-                    u.avg_rating_given
-                FROM processed_reviews pr
-                LEFT JOIN raw_reviews r ON pr.review_id = r.review_id
-                LEFT JOIN raw_products p ON pr.product_id = p.product_id
-                LEFT JOIN raw_users u ON pr.user_id = u.user_id
-                ORDER BY pr.processed_at DESC
-                """,
-                conn,
-            )
-        model_registry = read_model_registry(engine)
+        products, reviews, history, processed, model_registry = _fetch_all_data(db_uri)
     except Exception as exc:
         st.error(f"Chưa kết nối được PostgreSQL hoặc schema crawl chưa sẵn sàng: {exc}")
         return
 
     _render_metrics(products, reviews, history, processed, keywords_configured=tiki_keywords_from_env())
+
+    with st.sidebar:
+        if st.button("Làm mới dashboard", help="Xóa cache 5 phút và đọc lại dữ liệu từ DB"):
+            clear_dashboard_cache()
+            st.rerun()
+
+    _render_pipeline_diagnostics_panel(db_uri)
 
     crawl_tab, keyword_tab, review_tab, preprocessing_tab, model_tab = st.tabs(
         ["Crawl Overview", "Keyword History", "Comments", "Preprocessing", "Model registry"]
@@ -145,6 +168,78 @@ def _render_model_registry(registry: pd.DataFrame) -> None:
                     st.code(detail)
                     continue
             st.json(detail)
+
+
+def _render_pipeline_diagnostics_panel(db_uri: str) -> None:
+    with st.expander("Chẩn đoán processed vs Comments (Neo / Airflow)", expanded=False):
+        try:
+            eng = create_engine(db_uri)
+            with eng.connect() as conn:
+                raw_n = int(conn.execute(text("SELECT COUNT(*) FROM raw_reviews")).scalar() or 0)
+                proc_n = int(conn.execute(text("SELECT COUNT(*) FROM processed_reviews")).scalar() or 0)
+                empty_raw = int(
+                    conn.execute(
+                        text(
+                            """
+                            SELECT COUNT(*) FROM raw_reviews
+                            WHERE content IS NULL OR trim(content) = ''
+                            """
+                        )
+                    ).scalar()
+                    or 0
+                )
+                pending = int(
+                    conn.execute(
+                        text(
+                            f"""
+                            SELECT COUNT(*) FROM raw_reviews r
+                            LEFT JOIN processed_reviews p
+                              ON ({SQL_DS_REVIEW_KEY_R}) = ({SQL_DS_REVIEW_KEY_P})
+                            WHERE r.content IS NOT NULL AND trim(r.content) <> '' AND p.review_id IS NULL
+                            """
+                        )
+                    ).scalar()
+                    or 0
+                )
+                meta_row = conn.execute(
+                    text(
+                        "SELECT last_value, updated_at FROM crawl_metadata WHERE crawl_key = :k LIMIT 1"
+                    ),
+                    {"k": "last_clean_label_summary"},
+                ).fetchone()
+            st.markdown(
+                f"| Chỉ số | Giá trị |\n|---|---|\n"
+                f"| `raw_reviews` (tổng) | **{raw_n:,}** |\n"
+                f"| raw nhưng rỗng nội dung | {empty_raw:,} |\n"
+                f"| `processed_reviews` | **{proc_n:,}** |\n"
+                f"| raw có text **chưa** có trong processed | **{pending:,}** |"
+            )
+            if pending > 0:
+                st.warning(
+                    f"Còn **{pending:,}** review có nội dung nhưng chưa ghi preprocessing. "
+                    "Thường do **chưa chạy** `dag_clean_label`, hoặc task **timeout / failed** giữa chừng."
+                )
+            if meta_row and meta_row[0]:
+                val: str = str(meta_row[0])
+                ts = meta_row[1]
+                show = val if len(val) <= 1200 else val[:1200] + "…"
+                st.code(show, language="json")
+                st.caption(f"Lần ghi `last_clean_label_summary`: {ts}")
+            else:
+                st.info(
+                    "Chưa có dòng `crawl_metadata.last_clean_label_summary` — DAG preprocessing có thể chưa chạy thành công."
+                )
+            st.caption(
+                "Pending khớp **`review_id`** sau khi đưa về khóa logic: chuỗi **chỉ chứa số** (kể cả `000123`, `123.0`) "
+                "→ cùng một `bigint` text; không phải dạng đó thì chỉ btrim và bỏ `.0` cuối. Sau khi deploy, chạy **`dag_clean_label`** "
+                "(nên `PREPROCESSING_INCREMENTAL=false` một lần) rồi **Làm mới dashboard**."
+            )
+            st.caption(
+                "Kiểm tra Airflow connection `tiki_data` và biến `TIKI_DATA_DB` trong `.env` phải **cùng** database Neon "
+                "(sau khi đổi Neon, chạy lại `airflow-init` hoặc sửa connection trên UI Airflow)."
+            )
+        except Exception as exc:
+            st.warning(f"Không đọc được chỉ số diagnostic: {exc}")
 
 
 def _render_metrics(

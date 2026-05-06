@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from CRAWLER.crawlers.base_crawler import BaseCrawler
+from PREPROCESSING.ids import canonical_text_id
 from PREPROCESSING.nlp_utils import clean_text
 
 
@@ -81,9 +82,19 @@ class ReviewCrawler(BaseCrawler):
                 created_at = None
 
         user = item.get("created_by") or item.get("customer") or item.get("user") or {}
-        review_id = item.get("id") or item.get("review_id") or item.get("comment_id")
+        raw_id = item.get("id")
+        if raw_id is None:
+            raw_id = item.get("review_id")
+        if raw_id is None:
+            raw_id = item.get("comment_id")
+        if raw_id is not None:
+            rid_out = canonical_text_id(raw_id)
+        else:
+            rid_out = canonical_text_id(
+                f"{product_id}-{created or ''}-{user.get('id') or item.get('customer_id') or ''}"
+            )
         return {
-            "review_id": str(review_id or f"{product_id}-{created or ''}-{user.get('id') or item.get('customer_id') or ''}"),
+            "review_id": rid_out,
             "product_id": str(product_id),
             "user_id": str(user.get("id") or item.get("customer_id") or ""),
             "rating": item.get("rating"),

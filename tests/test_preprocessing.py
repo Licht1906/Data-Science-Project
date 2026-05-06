@@ -1,7 +1,17 @@
 from __future__ import annotations
 
+from PREPROCESSING.ids import canonical_text_id
 from PREPROCESSING.labeling import label_review
 from PREPROCESSING.nlp_utils import clean_text
+
+
+def test_canonical_review_id_leading_zeros_and_decimals():
+    assert canonical_text_id("000123") == "123"
+    assert canonical_text_id("123.00") == "123"
+    assert canonical_text_id("12345.0") == "12345"
+    assert canonical_text_id("  99  ") == "99"
+    assert canonical_text_id(12345.0) == "12345"
+    assert canonical_text_id(float("nan")) == ""
 
 
 def test_clean_text_keeps_vietnamese_accents():
